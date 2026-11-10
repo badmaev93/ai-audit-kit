@@ -1,24 +1,28 @@
 # ai-audit-kit
 
-Инструментарий для продукта «AI-аудит существующего бота за фикс».
-Прогоняет Golden Set, считает корректность и честность, отдельно гоняет пробы на prompt injection и собирает отчёт с маппингом на OWASP LLM Top 10.
+A zero-dependency toolkit for running fixed-scope **AI Agent & Chatbot Audits** (evaluation, hallucination checks, and security probing).
 
-Только стандартная библиотека Python 3.9+. Ставить нечего.
+Runs a **Golden Set** against your bot, measures semantic correctness, numerical honesty, clarification behavior, and tool selection across multiple stochastic runs, probes for prompt injection & OWASP LLM vulnerabilities, and generates Markdown + CSV audit reports mapped to **OWASP LLM Top 10** and **NIST AI RMF**.
 
-## Быстрый старт
+Built with Python 3.9+ standard library only (no third-party dependencies required).
+
+> **Language note:** CLI flags and architecture are documented in English below. The bundled demo datasets (`data/golden_set.csv`, `data/attacks_ru.csv`), built-in `mock` bot, and generated Markdown report strings currently use Russian examples and column headers (`вопрос`, `эталон`, etc.) matching the parser scripts.
+
+## Quick Start
 
 ```bash
 cd ai-audit-kit
-python3 run_eval.py --runs 3          # прогон Golden Set
-python3 run_security.py --runs 5      # security-прогон
-open reports/report.md
+python3 run_eval.py --runs 3          # run Golden Set evaluation
+python3 run_security.py --runs 5      # run security probes
+open reports/report.md                # evaluation report (+ reports/results.csv)
+open reports/report_security.md       # security report (+ reports/security_results.csv)
 ```
 
-По умолчанию цель — `mock`: встроенный заведомо дырявый бот. Он воспроизводит реальные провалы из практики (выдуманная экстраполяция расходов, игнор развилки «надлежащего/ненадлежащего качества», слив системного промпта). Нужен, чтобы увидеть пайплайн целиком, не подключая ничего.
+By default, the target is `mock`: a built-in intentionally flawed support bot that reproduces real-world agent failure modes (fabricating extrapolated expenses when data is missing, ignoring policy edge cases such as defective vs. non-defective returns, and leaking its system prompt). Use it to inspect the full pipeline offline before connecting a real agent.
 
-## Подключение реального бота
+## Connecting a Real Bot
 
-**HTTP-эндпоинт.** Бот принимает `POST {"question": "..."}` и возвращает `{"answer": "...", "trace": "..."}`:
+**HTTP endpoint.** Your bot accepts `POST {"question": "..."}` and returns `{"answer": "...", "trace": "..."}`:
 
 ```bash
 python3 run_eval.py --target http --url https://bot.example.com/ask --runs 5
@@ -26,9 +30,9 @@ python3 run_eval.py --target http --url ... --answer-field text --trace-field st
   --header "Authorization: Bearer XXX"
 ```
 
-Поле `trace` — трасса: какие инструменты вызваны, какие чанки извлечены. Без неё проверка честности работает слабее: числа сверяются только с эталоном и вопросом.
+The `trace` field captures execution telemetry (which tools were called, which RAG chunks were retrieved). Without `trace`, honesty verification is weaker because numbers in the answer can only be cross-checked against the question and ground-truth reference.
 
-**OpenAI-совместимая модель** (OpenRouter, локальный сервер, сам OpenAI):
+**OpenAI-compatible model** (OpenRouter, local server, or OpenAI directly):
 
 ```bash
 export OPENROUTER_API_KEY=...
@@ -36,74 +40,74 @@ python3 run_eval.py --target openai --model anthropic/claude-haiku-4.5 \
   --system-prompt-file prompts/system.txt --runs 5
 ```
 
-## Судья
+## Evaluator (`--judge`)
 
-| Режим | Когда |
+| Mode | When to use |
 |---|---|
-| `--judge exact` (по умолчанию) | дымовой прогон без сети. Пересечение слов, грубая эвристика — годится проверить, что пайплайн жив, но не для отчёта клиенту |
-| `--judge llm` | реальный аудит. Нужен ключ в `OPENROUTER_API_KEY` |
+| `--judge exact` *(default)* | Offline smoke test. Heuristic word-overlap check to verify the pipeline runs; not suitable for client audit reports. |
+| `--judge llm` | Real audit evaluation using an LLM rubric (`OPENROUTER_API_KEY` required). |
 
 ```bash
 python3 run_eval.py --target http --url ... --judge llm --judge-passes 3
 ```
 
-`--judge-passes 3` — три прохода и majority. LLM-судья смещён: реагирует на порядок вариантов, любит многословные ответы, дрейфует со временем. Несколько проходов и фиксированная рубрика гасят часть этого. Когда судьи разошлись, в комментарии появляется «согласие судей 67%» — такие кейсы смотреть глазами.
+`--judge-passes 3` runs three judging passes with majority voting. LLM judges have known biases (sensitivity to option ordering, verbosity bias, drift over time); multiple passes paired with a fixed rubric dampen variance. When judge passes disagree, the report records the agreement ratio (e.g., `67%`) so you can review split decisions manually.
 
-## Что считается
+## What Gets Measured
 
-| Метрика | Что значит |
+| Metric | Definition |
 |---|---|
-| **Верно** | смысл совпал с эталоном (вердикт CORRECT в большинстве прогонов) |
-| **Честно** | каждое число в ответе подтверждено вопросом, эталоном или трассой инструмента |
-| **Уточнение** | там, где данных заведомо не хватает, бот задал вопрос, а не выдумал ответ |
-| **Инструмент** | вызван тот инструмент, который должен быть вызван (нужна трасса) |
+| **Correctness** | Semantic match with the SME ground-truth answer (`CORRECT` verdict in the majority of `--runs`) |
+| **Honesty** | Every numeric value in the answer is grounded in the user question, ground-truth reference, or tool execution `trace` |
+| **Clarification** | When required input data is missing, the bot asks a clarifying question instead of guessing |
+| **Tool Usage** | The expected tool(s) appear in the execution `trace` |
 
-«Верно» и «честно» — разные вопросы. Ответ бывает верным и нечестным одновременно: цифра совпала случайно, но взялась из головы.
+**Correctness and honesty measure different failure modes.** An answer can be simultaneously "correct" and dishonest: a number happens to match by coincidence, but the agent fabricated it without retrieving it from a source.
 
-`--runs N` гоняет каждый вопрос N раз. Поведение LLM стохастическое: «сработало один раз» и «работает всегда» — разные находки. В отчёте есть раздел «Нестабильные вопросы».
+`--runs N` executes each question `N` times because LLM outputs are stochastic: "worked once" and "works reliably" are very different findings. Questions with split outcomes are surfaced in the **Unstable Questions** section of the report.
 
-## Формат Golden Set
+## Golden Set Format
 
-`data/golden_set.csv`:
+`data/golden_set.csv` (current parser expects Russian column headers as listed below):
 
-| Колонка | Значение |
+| Column header | Meaning |
 |---|---|
-| `id` | G001, G002, … |
-| `вопрос` | реальный вопрос из логов клиента |
-| `эталон` | ответ, который подтвердил человек, знающий предметку |
-| `категория` | `happy` / `edge` / `adversarial` |
-| `сложность` | `easy` / `medium` / `hard` |
-| `источник` | откуда взят кейс |
-| `требуемый_инструмент` | что должно быть вызвано: `knowledge_base`, `sql`, `crm`, `calculator`, `email`, `нет`. Несколько — через запятую |
-| `ожидается_уточнение` | `да`, если данных заведомо не хватает и бот обязан переспросить |
+| `id` | Case identifier (`G001`, `G002`, ...) |
+| `вопрос` *(question)* | Real user query taken from production logs |
+| `эталон` *(reference)* | Ground-truth answer verified by a domain expert |
+| `категория` *(category)* | `happy` / `edge` / `adversarial` |
+| `сложность` *(difficulty)* | `easy` / `medium` / `hard` |
+| `источник` *(source)* | Provenance of the test case |
+| `требуемый_инструмент` *(required_tool)* | Expected tool(s): `knowledge_base`, `sql`, `crm`, `calculator`, `email`, or `нет` (none). Comma-separated if multiple |
+| `ожидается_уточнение` *(expects_clarification)* | `да` (yes) if information is missing and the bot must ask for clarification |
 
-Правила сборки:
+**Curation rules:**
 
-1. Кейсы берутся из реальных логов, а не выдумываются.
-2. Обязательно включать трудные: граничные, двусмысленные, где правдоподобный неверный ответ даётся легко.
-3. Эталоны подтверждает человек из предметной области. Тихо неверный эталон хуже, чем отсутствие теста.
-4. Сет — живой версионируемый артефакт. Каждый новый провал в проде становится новым кейсом.
-5. Прогон на 100% — не повод радоваться. Сет врёт двумя способами: он слишком лёгкий или устарел. Оба выглядят как зелёные галочки.
+1. Pull test cases from real production logs rather than inventing synthetic prompts.
+2. Explicitly include hard cases: boundary conditions, ambiguous queries, and traps where a plausible-sounding wrong answer is easy to generate.
+3. Have a domain SME verify every reference answer. A silently wrong reference label is worse than having no test.
+4. Treat the Golden Set as a living, versioned artifact: every new production failure becomes a regression test case.
+5. A 100% pass rate is not a reason to celebrate. A Golden Set lies in two ways: either it is too easy or it is stale; both look like all green checks.
 
-15 строк в комплекте — стартовый пример для интернет-магазина, не готовый сет клиента.
+The bundled 15-row CSV is a starter e-commerce demo example, not a production client benchmark.
 
-## Security-прогон
+## Security Probes
 
-`data/attacks_ru.csv` — 20 проб: прямые и косвенные инъекции, утечка системного промпта и PII, excessive agency, отравление памяти. Колонка `маркер_успеха` — regex, по которому проба считается сработавшей.
+`data/attacks_ru.csv` contains 20 probes covering direct and indirect prompt injection, system prompt and PII leakage, excessive agency, and memory poisoning. The `маркер_успеха` *(success marker)* column defines the regex pattern indicating probe compromise.
 
-Отчёт группирует находки по категориям OWASP LLM Top 10, проставляет severity, маппинг на NIST AI RMF и рекомендацию.
+`run_security.py` outputs `reports/report_security.md` and `reports/security_results.csv`, grouping findings by **OWASP LLM Top 10** category with severity ratings, **NIST AI RMF** mappings, and remediation guidance.
 
-Расширить набор проб: русскоязычный датасет инъекций на 22 тысячи строк — `github.com/Dmtr-Dr/prompt-injections`.
-Автосканеры для более глубокого прохода: Garak (NVIDIA, 50+ классов атак), PyRIT (Microsoft, многоходовые), Promptfoo (CI/CD-гейт).
+- **Larger injection corpus:** 22k-row Russian prompt-injection dataset (`github.com/Dmtr-Dr/prompt-injections`).
+- **Deeper automated scanners:** Garak (NVIDIA, 50+ attack classes), PyRIT (Microsoft, multi-turn red-teaming), Promptfoo (CI/CD eval & security gate).
 
-Автоматика покрывает известные паттерны. Косвенные инъекции через содержимое RAG-документов и цепочки через tool calling проверяются руками. Запускать только против систем, на тестирование которых есть письменное разрешение владельца.
+Automated probes cover known patterns only. Indirect prompt injections embedded in RAG documents and multi-step tool-calling exploit chains still require manual review. **Run security probes only against systems for which you have explicit written authorization from the owner.**
 
-## Границы применимости
+## Scope & Limitations
 
-- 100-150 вопросов — скрининг, а не статистически строгая оценка. Для 5% погрешности при 95% доверии нужно ~246 кейсов на срез.
-- Проверка честности ловит выдуманные числа. Выдуманные факты без чисел она не поймает — для этого нужен LLM-судья и эталон, где такой факт явно зафиксирован.
-- Проверка инструмента работает только если бот отдаёт трассу.
+- A 100–150 question Golden Set is an initial screening pass, not a statistically strict benchmark (achieving a ±5% margin of error at 95% confidence requires roughly ~246 samples per slice).
+- Heuristic honesty checking catches fabricated numbers; fabricated non-numeric facts require an LLM judge backed by explicit reference assertions.
+- Tool usage verification only works when the target exposes execution telemetry via `trace`.
 
-## Дальше: CI-гейт
+## Next Step: CI/CD Gate
 
-После аудита сет остаётся у клиента. Следующий шаг — гейт на каждый PR: прогон против сета, блок мержа при падении ниже порога (обычно 95%), плюс ночной полный прогон с алертом в Slack на дрейф. Это укладывается в один CI-workflow.
+After the initial audit, the Golden Set remains in the client's repository. The natural next step is adding a PR merge gate (running the eval suite on every PR and blocking merges below threshold, typically 95%) alongside a full nightly run with Slack drift alerts, all inside a single CI workflow.
