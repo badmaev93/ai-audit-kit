@@ -374,10 +374,21 @@ def main():
     }
 
     csv_path = os.path.join(args.out, "results.csv")
+
+    def sanitize_row(row):
+        sanitized = {}
+        for k, v in row.items():
+            if isinstance(v, str) and v.startswith(('=', '+', '-', '@', '\t', '\r')):
+                sanitized[k] = "'" + v
+            else:
+                sanitized[k] = v
+        return sanitized
+
+    sanitized_results = [sanitize_row(r) for r in results]
     with open(csv_path, "w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(results[0].keys()))
         writer.writeheader()
-        writer.writerows(results)
+        writer.writerows(sanitized_results)
 
     report = render_report(results, meta)
     md_path = os.path.join(args.out, "report.md")
