@@ -88,6 +88,8 @@ class LLMJudge(Judge):
     name = "llm"
 
     def __init__(self, base_url, model, api_key, passes=1, timeout=120):
+        if not base_url.startswith(("http://", "https://")):
+            raise ValueError("URL must start with http:// or https://")
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.api_key = api_key
