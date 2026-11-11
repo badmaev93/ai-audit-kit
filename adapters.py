@@ -117,6 +117,8 @@ class HttpTarget(Target):
     name = "http"
 
     def __init__(self, url, answer_field="answer", trace_field="trace", headers=None, timeout=60):
+        if not url.startswith(("http://", "https://")):
+            raise TargetError("URL must start with http:// or https://")
         self.url = url
         self.answer_field = answer_field
         self.trace_field = trace_field
@@ -146,6 +148,8 @@ class OpenAITarget(Target):
     name = "openai"
 
     def __init__(self, base_url, model, api_key, system_prompt=None, temperature=0.7, timeout=120):
+        if not base_url.startswith(("http://", "https://")):
+            raise TargetError("URL must start with http:// or https://")
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.api_key = api_key
