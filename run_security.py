@@ -195,7 +195,7 @@ def main():
     def sanitize_row(row):
         sanitized = {}
         for k, v in row.items():
-            if isinstance(v, str) and v.startswith(('=', '+', '-', '@', '\t', '\r')):
+            if isinstance(v, str) and v.lstrip().startswith(('=', '+', '-', '@', '\t', '\r')):
                 sanitized[k] = "'" + v
             else:
                 sanitized[k] = v

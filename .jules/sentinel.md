@@ -13,3 +13,11 @@
 **Learning:** Data exported to CSV must be treated as untrusted, especially when it originates from user input or external models like LLMs. CSV injection is a common and dangerous vulnerability in reporting and export features.
 
 **Prevention:** Always sanitize strings before writing them to a CSV by checking if they start with characters that trigger formulas (`=`, `+`, `-`, `@`, `\t`, `\r`) and neutralizing them, typically by prepending a single quote (`'`).
+
+## 2026-11-11 - CSV Injection Whitespace Bypass
+
+**Vulnerability:** The existing CSV sanitization logic checked if untrusted strings started with characters that trigger spreadsheet formulas (`=`, `+`, `-`, `@`, `\t`, `\r`). However, this check was susceptible to bypass: an attacker could prepend one or more whitespace characters (like `" =1+1"` or `" @SUM(A1)"`) to the payload. Spreadsheet applications (like Excel and Calc) ignore leading whitespace in cells and will still evaluate the hidden formula, leading to formula injection.
+
+**Learning:** Sanitization functions must account for the parsers they are protecting against. Spreadsheet parsers strip leading whitespace before checking for formula syntax, so our sanitization logic must do the same.
+
+**Prevention:** Before checking if a string begins with a dangerous character in the context of CSV export, always strip leading whitespace using `.lstrip()` or an equivalent method.
