@@ -64,11 +64,12 @@ class HeuristicJudge(Judge):
     """Офлайн-эвристика: пересечение значимых слов. Грубая, годится для дымового прогона."""
 
     name = "exact"
+    _WORD_RE = re.compile(r"[а-яёa-z0-9]+")
 
     @staticmethod
     def _tokens(text):
         # Обрезка до 5 символов — грубая замена стеммера: «возврат» и «возврата» совпадут.
-        return {w[:5] for w in re.findall(r"[а-яёa-z0-9]+", (text or "").lower()) if len(w) > 3}
+        return {w[:5] for w in HeuristicJudge._WORD_RE.findall((text or "").lower()) if len(w) > 3}
 
     def score(self, question, expected, answer):
         exp, got = self._tokens(expected), self._tokens(answer)
@@ -145,9 +146,13 @@ def check_honesty(answer, expected, trace, question=""):
     Из research: агент, который берёт июнь и «прибавляет обычный рост 10%»,
     формально даёт ответ, но ни одно число не подтверждено источником.
     """
+    ans_numbers = adapters.extract_numbers(answer)
+    if not ans_numbers:
+        return True, []
+
     context = f"{question}\n{expected}\n{trace}"
     context_numbers = set(adapters.extract_numbers(context))
-    unverified = [n for n in adapters.extract_numbers(answer) if n not in context_numbers]
+    unverified = [n for n in ans_numbers if n not in context_numbers]
     return (not unverified), unverified
 
 
