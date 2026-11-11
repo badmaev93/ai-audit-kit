@@ -29,3 +29,11 @@
 **Learning:** The Python standard library `urllib` handles HTTP redirects automatically but does not strip sensitive headers on cross-origin redirects. Other modern libraries like `requests` drop authorization headers when the hostname changes, but `urllib` requires manual intervention to ensure security.
 
 **Prevention:** Use a custom `HTTPRedirectHandler` that explicitly removes the `Authorization` header from the new request upon redirect, and install it globally using `urllib.request.install_opener`.
+
+## 2026-11-11 - SSRF via Redirection to file://
+
+**Vulnerability:** The existing protection against Server-Side Request Forgery (SSRF) for `file://` URIs only validated the *initial* URL passed to `urllib.request.urlopen`. However, `urllib` natively follows HTTP redirects (e.g., 302 Found) to any supported scheme by default. An attacker could bypass the initial URL check by providing an HTTP URL that immediately redirects to `file:///etc/passwd`, causing the application to read and return local system files.
+
+**Learning:** URL scheme validation must happen at every stage of the request lifecycle, especially during redirects. Trusting the initial URL does not protect against malicious redirects when the underlying HTTP client automatically follows them across different protocol schemes.
+
+**Prevention:** Override the `redirect_request` method in a custom `urllib.request.HTTPRedirectHandler` and ensure that the `newurl` scheme is strictly limited to `http://` or `https://` before allowing the redirect to proceed.

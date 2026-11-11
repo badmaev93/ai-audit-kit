@@ -12,15 +12,31 @@ import urllib.error
 import urllib.request
 
 
+import urllib.parse
+
 class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not newurl.startswith(("http://", "https://")):
+            raise urllib.error.URLError(f"Redirection to non-HTTP(S) scheme is not allowed: {newurl}")
+
         new_req = super().redirect_request(req, fp, code, msg, headers, newurl)
-        if new_req and "Authorization" in new_req.headers:
-            del new_req.headers["Authorization"]
-        if new_req and "authorization" in new_req.unredirected_hdrs:
-            del new_req.unredirected_hdrs["authorization"]
-        if new_req and "Authorization" in new_req.unredirected_hdrs:
-            del new_req.unredirected_hdrs["Authorization"]
+        if new_req is None:
+            return None
+
+        orig_host = req.host
+        new_host = urllib.parse.urlparse(newurl).netloc
+
+        if orig_host != new_host:
+            sensitive_headers = {'authorization', 'cookie', 'x-api-key', 'x-auth-token'}
+
+            for header in list(new_req.headers.keys()):
+                if header.lower() in sensitive_headers:
+                    del new_req.headers[header]
+
+            for header in list(new_req.unredirected_hdrs.keys()):
+                if header.lower() in sensitive_headers:
+                    del new_req.unredirected_hdrs[header]
+
         return new_req
 
 urllib.request.install_opener(urllib.request.build_opener(SafeRedirectHandler))
