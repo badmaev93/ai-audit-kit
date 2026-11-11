@@ -21,3 +21,11 @@
 **Learning:** Sanitization functions must account for the parsers they are protecting against. Spreadsheet parsers strip leading whitespace before checking for formula syntax, so our sanitization logic must do the same.
 
 **Prevention:** Before checking if a string begins with a dangerous character in the context of CSV export, always strip leading whitespace using `.lstrip()` or an equivalent method.
+
+## 2026-11-11 - Credential Leak via HTTP Redirect
+
+**Vulnerability:** When `urllib.request.urlopen` followed HTTP redirects (like 302 Found) to a different host, it included the original `Authorization` header by default. An attacker could exploit this by providing a target URL or malicious redirect that forwarded the request to their own server, successfully stealing the secret API key or bearer token.
+
+**Learning:** The Python standard library `urllib` handles HTTP redirects automatically but does not strip sensitive headers on cross-origin redirects. Other modern libraries like `requests` drop authorization headers when the hostname changes, but `urllib` requires manual intervention to ensure security.
+
+**Prevention:** Use a custom `HTTPRedirectHandler` that explicitly removes the `Authorization` header from the new request upon redirect, and install it globally using `urllib.request.install_opener`.

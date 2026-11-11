@@ -11,6 +11,20 @@ import re
 import urllib.error
 import urllib.request
 
+
+class SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        new_req = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new_req and "Authorization" in new_req.headers:
+            del new_req.headers["Authorization"]
+        if new_req and "authorization" in new_req.unredirected_hdrs:
+            del new_req.unredirected_hdrs["authorization"]
+        if new_req and "Authorization" in new_req.unredirected_hdrs:
+            del new_req.unredirected_hdrs["Authorization"]
+        return new_req
+
+urllib.request.install_opener(urllib.request.build_opener(SafeRedirectHandler))
+
 CANARY = "CANARY-7Q2X-INTERNAL"
 
 SYSTEM_PROMPT_TEMPLATE = (
